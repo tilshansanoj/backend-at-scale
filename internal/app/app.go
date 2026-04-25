@@ -6,7 +6,10 @@ import (
 	"backend-at-scale/internal/kafka"
 	"backend-at-scale/internal/middleware"
 	"backend-at-scale/internal/observability"
+	"log"
+	"os"
 	otelfiber "github.com/gofiber/contrib/otelfiber"
+	"github.com/prometheus/client_golang/prometheus"
 	"backend-at-scale/internal/store"
 	"github.com/gofiber/adaptor/v2"
 	"github.com/gofiber/fiber/v2"
@@ -32,7 +35,13 @@ func NewServer(
 	})
 	app.Get("/products", productHandler.GetProducts)
 	app.Post("/products", productHandler.CreateProduct)
-	app.Get("/metrics", adaptor.HTTPHandler(promhttp.Handler()))
+	app.Get("/metrics", adaptor.HTTPHandler(promhttp.HandlerFor(
+		prometheus.DefaultGatherer,
+		promhttp.HandlerOpts{
+			ErrorHandling: promhttp.ContinueOnError,
+			ErrorLog:      log.New(os.Stderr, "promhttp: ", log.LstdFlags),
+		},
+	)))
 
 	return app
 }
