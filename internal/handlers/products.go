@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"sync"
 	"strings"
 	"time"
 
@@ -20,10 +21,6 @@ import (
 
 const productsListCacheKey = "products:list:v1"
 
-// GET /products does Redis + replica read + optional Redis SET; a tight deadline cancels pgx mid-query,
-// which shows on replicas as "could not send data to client: Broken pipe" / "connection to client lost".
-const getProductsHandlerTimeout = 12 * time.Second
-
 type createProductRequest struct {
 	Name  string  `json:"name"`
 	Price float64 `json:"price"`
@@ -35,6 +32,11 @@ type ProductHandler struct {
 	redis    *redis.Client
 	kafkaPub *appkafka.AsyncPublisher
 	metrics  *observability.Metrics
+
+	listMu       sync.Mutex
+	listInFlight chan struct{}
+	listResult   []store.Product
+	listErr      error
 }
 
 func NewProductHandler(
@@ -54,7 +56,9 @@ func NewProductHandler(
 }
 
 func (h *ProductHandler) GetProducts(c *fiber.Ctx) error {
-	ctx, cancel := context.WithTimeout(c.UserContext(), getProductsHandlerTimeout)
+	// Keep this configurable so load tests can tune deadline without rebuilds.
+	timeout := time.Duration(h.cfg.GetProductsTimeoutMS) * time.Millisecond
+	ctx, cancel := context.WithTimeout(c.UserContext(), timeout)
 	defer cancel()
 	ctx, span := otel.Tracer("ecommerce.handlers").Start(ctx, "products.get")
 	defer span.End()
@@ -70,11 +74,8 @@ func (h *ProductHandler) GetProducts(c *fiber.Ctx) error {
 			Timestamp: time.Now().UTC(),
 		})
 
-		var products []store.Product
-		if unmarshalErr := json.Unmarshal([]byte(cacheValue), &products); unmarshalErr == nil {
-			span.SetAttributes(attribute.String("cache.result", "hit"))
-			return c.Status(fiber.StatusOK).JSON(products)
-		}
+		span.SetAttributes(attribute.String("cache.result", "hit"))
+		return c.Status(fiber.StatusOK).Type("application/json").SendString(cacheValue)
 	} else {
 		if !errors.Is(err, redis.Nil) {
 			span.RecordError(err)
@@ -84,7 +85,7 @@ func (h *ProductHandler) GetProducts(c *fiber.Ctx) error {
 		span.SetAttributes(attribute.String("cache.result", "miss"))
 	}
 
-	products, err := h.postgres.GetProducts(ctx)
+	products, err := h.getProductsCoalesced(ctx)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "postgres query failed")
@@ -92,13 +93,18 @@ func (h *ProductHandler) GetProducts(c *fiber.Ctx) error {
 	}
 
 	payload, err := json.Marshal(products)
-	if err == nil {
-		setCtx, setSpan := otel.Tracer("ecommerce.handlers").Start(ctx, "redis.set.products")
-		if setErr := h.redis.Set(setCtx, productsListCacheKey, payload, 30*time.Second).Err(); setErr != nil {
-			setSpan.RecordError(setErr)
-		}
-		setSpan.End()
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "json marshal failed")
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to encode products"})
 	}
+
+	setCtx, setSpan := otel.Tracer("ecommerce.handlers").Start(ctx, "redis.set.products")
+	ttl := time.Duration(h.cfg.ProductsCacheTTLSeconds) * time.Second
+	if setErr := h.redis.Set(setCtx, productsListCacheKey, payload, ttl).Err(); setErr != nil {
+		setSpan.RecordError(setErr)
+	}
+	setSpan.End()
 
 	h.kafkaPub.TryEnqueue(appkafka.Event{
 		Type:      "products.list.db_read",
@@ -106,7 +112,7 @@ func (h *ProductHandler) GetProducts(c *fiber.Ctx) error {
 		Timestamp: time.Now().UTC(),
 	})
 
-	return c.Status(fiber.StatusOK).JSON(products)
+	return c.Status(fiber.StatusOK).Type("application/json").Send(payload)
 }
 
 func (h *ProductHandler) CreateProduct(c *fiber.Ctx) error {
@@ -144,4 +150,34 @@ func (h *ProductHandler) CreateProduct(c *fiber.Ctx) error {
 	})
 
 	return c.Status(fiber.StatusCreated).JSON(p)
+}
+
+func (h *ProductHandler) getProductsCoalesced(ctx context.Context) ([]store.Product, error) {
+	h.listMu.Lock()
+	if h.listInFlight != nil {
+		wait := h.listInFlight
+		h.listMu.Unlock()
+		select {
+		case <-wait:
+			h.listMu.Lock()
+			defer h.listMu.Unlock()
+			return h.listResult, h.listErr
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+
+	wait := make(chan struct{})
+	h.listInFlight = wait
+	h.listMu.Unlock()
+
+	products, err := h.postgres.GetProducts(ctx)
+
+	h.listMu.Lock()
+	h.listResult = products
+	h.listErr = err
+	close(wait)
+	h.listInFlight = nil
+	h.listMu.Unlock()
+	return products, err
 }

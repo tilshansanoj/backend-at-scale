@@ -1,6 +1,10 @@
 package observability
 
-import "github.com/prometheus/client_golang/prometheus"
+import (
+	"sync"
+
+	"github.com/prometheus/client_golang/prometheus"
+)
 
 type Metrics struct {
 	HTTPRequestTotal *prometheus.CounterVec
@@ -14,10 +18,16 @@ type Metrics struct {
 	DBPoolConns      *prometheus.GaugeVec
 }
 
-func NewMetrics(service string) *Metrics {
+var (
+	metricsOnce sync.Once
+	metricsInst *Metrics
+)
+
+func NewMetrics(_ string) *Metrics {
+	metricsOnce.Do(func() {
 	namespace := "ecommerce"
 
-	m := &Metrics{
+	metricsInst = &Metrics{
 		HTTPRequestTotal: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
 				Namespace: namespace,
@@ -104,17 +114,18 @@ func NewMetrics(service string) *Metrics {
 	}
 
 	prometheus.MustRegister(
-		m.HTTPRequestTotal,
-		m.HTTPRequestDur,
-		m.DBQueryDur,
-		m.RedisCacheTotal,
-		m.KafkaPublish,
-		m.KafkaAsyncEnqueue,
-		m.KafkaConsume,
-		m.KafkaLagGauge,
-		m.DBPoolConns,
+		metricsInst.HTTPRequestTotal,
+		metricsInst.HTTPRequestDur,
+		metricsInst.DBQueryDur,
+		metricsInst.RedisCacheTotal,
+		metricsInst.KafkaPublish,
+		metricsInst.KafkaAsyncEnqueue,
+		metricsInst.KafkaConsume,
+		metricsInst.KafkaLagGauge,
+		metricsInst.DBPoolConns,
 	)
+	})
 
-	return m
+	return metricsInst
 }
 

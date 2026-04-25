@@ -19,6 +19,7 @@ Production-ready Go ecommerce backend with full local observability stack:
 3. Start full stack:
    - `docker compose up --build`
    - If a replica logs `requested WAL segment ... has already been removed`, the primary recycled WAL before catch-up: keep `POSTGRES_WAL_KEEP_SIZE` (default `2GB` in compose), then remove that replica’s Docker volume and recreate the container so it runs `pg_basebackup` again.
+   - If you see **`replication terminated by primary server`**, **`server closed the connection unexpectedly`**, or **`invalid record length ... got 0`** on a replica, the **primary** usually restarted, crashed (check Docker / OOM), or was stopped with too little grace time. Compose sets **`shm_size`** and **`stop_grace_period`** on Postgres to reduce that; check **`docker logs ecommerce-postgres`** at the same timestamp. Replicas often **reconnect** a few seconds later (`started streaming WAL from primary` again).
 4. Open:
    - API: [http://localhost:8080](http://localhost:8080)
    - Metrics: [http://localhost:8080/metrics](http://localhost:8080/metrics)

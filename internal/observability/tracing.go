@@ -39,9 +39,11 @@ func InitTracing(ctx context.Context, cfg config.Config) (func(context.Context) 
 		return nil, fmt.Errorf("create otel resource: %w", err)
 	}
 
+	sampler := sdktrace.ParentBased(sdktrace.TraceIDRatioBased(cfg.OTELTraceSampleRatio))
 	tp := sdktrace.NewTracerProvider(
 		sdktrace.WithBatcher(exporter),
 		sdktrace.WithResource(res),
+		sdktrace.WithSampler(sampler),
 	)
 
 	otel.SetTracerProvider(tp)

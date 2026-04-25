@@ -24,7 +24,10 @@ func NewServer(
 	kafkaPub *kafka.AsyncPublisher,
 	metrics *observability.Metrics,
 ) *fiber.App {
-	app := fiber.New()
+	app := fiber.New(fiber.Config{
+		Prefork:               cfg.FiberPrefork,
+		DisableStartupMessage: true,
+	})
 	app.Use(otelfiber.Middleware())
 	app.Use(middleware.PrometheusHTTP(cfg, metrics))
 
