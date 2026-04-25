@@ -20,6 +20,10 @@ import (
 
 const productsListCacheKey = "products:list:v1"
 
+// GET /products does Redis + replica read + optional Redis SET; a tight deadline cancels pgx mid-query,
+// which shows on replicas as "could not send data to client: Broken pipe" / "connection to client lost".
+const getProductsHandlerTimeout = 12 * time.Second
+
 type createProductRequest struct {
 	Name  string  `json:"name"`
 	Price float64 `json:"price"`
@@ -50,7 +54,7 @@ func NewProductHandler(
 }
 
 func (h *ProductHandler) GetProducts(c *fiber.Ctx) error {
-	ctx, cancel := context.WithTimeout(c.UserContext(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(c.UserContext(), getProductsHandlerTimeout)
 	defer cancel()
 	ctx, span := otel.Tracer("ecommerce.handlers").Start(ctx, "products.get")
 	defer span.End()

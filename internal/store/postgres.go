@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"backend-at-scale/internal/config"
@@ -15,6 +16,10 @@ import (
 	"go.opentelemetry.io/otel/codes"
 )
 
+const (
+	sqlSelectProductsList = `SELECT id, name, price FROM products ORDER BY id ASC LIMIT 100`
+)
+
 type Product struct {
 	ID    int64   `json:"id"`
 	Name  string  `json:"name"`
@@ -23,42 +28,50 @@ type Product struct {
 
 type PostgresStore struct {
 	write   *pgxpool.Pool
-	read    *pgxpool.Pool
+	reads   []*pgxpool.Pool // empty => use write for reads
+	readRR  uint64
 	metrics *observability.Metrics
 	config  config.Config
 }
 
 func NewPostgres(ctx context.Context, cfg config.Config, metrics *observability.Metrics) (*PostgresStore, error) {
-	readDSN := strings.TrimSpace(cfg.PostgresReplicaURL)
+	replicaURLs := normalizeReplicaURLs(cfg.PostgresURL, cfg.PostgresReplicaURLs)
 	writeMax := cfg.PostgresPoolMaxConns
 	readMax := cfg.PostgresReadPoolMaxConns
+	readMaxPerReplica := readMaxPerDSN(readMax, len(replicaURLs))
 
 	var writePool *pgxpool.Pool
-	var readPool *pgxpool.Pool
+	var readPools []*pgxpool.Pool
 	var err error
 
-	if readDSN == "" || readDSN == cfg.PostgresURL {
+	if len(replicaURLs) == 0 {
 		combined := maxInt(writeMax, readMax)
 		writePool, err = newPgxPool(ctx, cfg.PostgresURL, combined)
 		if err != nil {
 			return nil, fmt.Errorf("primary postgres: %w", err)
 		}
-		readPool = writePool
+		readPools = nil
 	} else {
 		writePool, err = newPgxPool(ctx, cfg.PostgresURL, writeMax)
 		if err != nil {
 			return nil, fmt.Errorf("primary postgres: %w", err)
 		}
-		readPool, err = newPgxPool(ctx, readDSN, readMax)
-		if err != nil {
-			writePool.Close()
-			return nil, fmt.Errorf("replica postgres: %w", err)
+		for _, dsn := range replicaURLs {
+			p, err := newPgxPool(ctx, dsn, readMaxPerReplica)
+			if err != nil {
+				writePool.Close()
+				for _, q := range readPools {
+					q.Close()
+				}
+				return nil, fmt.Errorf("read replica postgres: %w", err)
+			}
+			readPools = append(readPools, p)
 		}
 	}
 
 	store := &PostgresStore{
 		write:   writePool,
-		read:    readPool,
+		reads:   readPools,
 		metrics: metrics,
 		config:  cfg,
 	}
@@ -69,9 +82,38 @@ func NewPostgres(ctx context.Context, cfg config.Config, metrics *observability.
 	return store, nil
 }
 
+// normalizeReplicaURLs drops empty entries and collapses to primary-only when every URL is the primary DSN.
+func normalizeReplicaURLs(primary string, replicas []string) []string {
+	out := make([]string, 0, len(replicas))
+	for _, u := range replicas {
+		u = strings.TrimSpace(u)
+		if u == "" {
+			continue
+		}
+		out = append(out, u)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	for _, u := range out {
+		if u != primary {
+			return out
+		}
+	}
+	return nil
+}
+
+func readMaxPerDSN(readMax int, replicaCount int) int {
+	if replicaCount <= 1 {
+		return readMax
+	}
+	per := readMax / replicaCount
+	return maxInt(2, per)
+}
+
 func (s *PostgresStore) logServerLimits(ctx context.Context) {
 	q := `SELECT setting FROM pg_settings WHERE name = 'max_connections'`
-	logPool := func(label string, pool *pgxpool.Pool, poolMax int) {
+	logPool := func(label string, pool *pgxpool.Pool, poolMax int32) {
 		c, cancel := context.WithTimeout(ctx, 3*time.Second)
 		defer cancel()
 		var setting string
@@ -83,15 +125,18 @@ func (s *PostgresStore) logServerLimits(ctx context.Context) {
 	}
 
 	if s.samePool() {
-		logPool("primary+read (single DSN)", s.write, maxInt(s.config.PostgresPoolMaxConns, s.config.PostgresReadPoolMaxConns))
+		maxC := maxInt(s.config.PostgresPoolMaxConns, s.config.PostgresReadPoolMaxConns)
+		logPool("primary+read (single DSN)", s.write, int32(maxC))
 		return
 	}
-	logPool("primary (write)", s.write, s.config.PostgresPoolMaxConns)
-	logPool("replica (read)", s.read, s.config.PostgresReadPoolMaxConns)
+	logPool("primary (write)", s.write, s.write.Config().MaxConns)
+	for i, p := range s.reads {
+		logPool(fmt.Sprintf("replica-%d (read)", i), p, p.Config().MaxConns)
+	}
 }
 
 func (s *PostgresStore) samePool() bool {
-	return s.read == s.write
+	return len(s.reads) == 0
 }
 
 func (s *PostgresStore) recordPoolStats(ctx context.Context) {
@@ -104,8 +149,8 @@ func (s *PostgresStore) recordPoolStats(ctx context.Context) {
 			return
 		case <-ticker.C:
 			s.recordOnePool("primary", s.write)
-			if !s.samePool() {
-				s.recordOnePool("replica", s.read)
+			for i, p := range s.reads {
+				s.recordOnePool(fmt.Sprintf("replica-%d", i), p)
 			}
 		}
 	}
@@ -118,17 +163,30 @@ func (s *PostgresStore) recordOnePool(poolName string, pool *pgxpool.Pool) {
 	s.metrics.DBPoolConns.WithLabelValues(s.config.ServiceName, poolName, "total").Set(float64(stats.TotalConns()))
 }
 
+func (s *PostgresStore) pickRead() (*pgxpool.Pool, string) {
+	if len(s.reads) == 0 {
+		return s.write, "primary"
+	}
+	if len(s.reads) == 1 {
+		return s.reads[0], "replica-0"
+	}
+	n := atomic.AddUint64(&s.readRR, 1)
+	i := int((n - 1) % uint64(len(s.reads)))
+	return s.reads[i], fmt.Sprintf("replica-%d", i)
+}
+
 func (s *PostgresStore) GetProducts(ctx context.Context) ([]Product, error) {
 	const queryName = "select_products"
 	start := time.Now()
 	ctx, span := otel.Tracer("ecommerce.store").Start(ctx, "postgres.get_products")
+	pool, poolLabel := s.pickRead()
 	span.SetAttributes(
 		attribute.String("db.operation", "select"),
-		attribute.String("db.pool", readPoolLabel(s)),
+		attribute.String("db.pool", poolLabel),
 	)
 	defer span.End()
 
-	rows, err := s.read.Query(ctx, "SELECT id, name, price FROM products ORDER BY id LIMIT 100")
+	rows, err := pool.Query(ctx, sqlSelectProductsList)
 	s.metrics.DBQueryDur.WithLabelValues(s.config.ServiceName, queryName).Observe(time.Since(start).Seconds())
 	if err != nil {
 		span.RecordError(err)
@@ -154,13 +212,6 @@ func (s *PostgresStore) GetProducts(ctx context.Context) ([]Product, error) {
 	}
 	span.SetAttributes(attribute.Int("db.rows", len(products)))
 	return products, nil
-}
-
-func readPoolLabel(s *PostgresStore) string {
-	if s.samePool() {
-		return "primary"
-	}
-	return "replica"
 }
 
 func (s *PostgresStore) InsertProduct(ctx context.Context, name string, price float64) (Product, error) {
@@ -191,8 +242,8 @@ func (s *PostgresStore) InsertProduct(ctx context.Context, name string, price fl
 
 func (s *PostgresStore) Close() {
 	s.write.Close()
-	if !s.samePool() {
-		s.read.Close()
+	for _, p := range s.reads {
+		p.Close()
 	}
 }
 

@@ -11,7 +11,8 @@ services:
       APP_PORT: "8080"
       APP_ENV: "${APP_ENV:-local}"
       POSTGRES_URL: "postgres://postgres:postgres@postgres:5432/ecommerce?sslmode=disable"
-      POSTGRES_REPLICA_URL: "postgres://postgres:postgres@postgres-replica:5432/ecommerce?sslmode=disable"
+      # Comma-separated read replicas; app round-robins. POSTGRES_READ_POOL_MAX_CONNS is split across each replica.
+      POSTGRES_REPLICA_URL: "postgres://postgres:postgres@postgres-replica:5432/ecommerce?sslmode=disable,postgres://postgres:postgres@postgres-replica-2:5432/ecommerce?sslmode=disable"
       REDIS_ADDR: "redis:6379"
       REDIS_PASSWORD: ""
       KAFKA_BROKERS: "kafka:9092"
@@ -27,6 +28,8 @@ services:
       postgres:
         condition: service_healthy
       postgres-replica:
+        condition: service_healthy
+      postgres-replica-2:
         condition: service_healthy
       redis:
         condition: service_healthy
@@ -60,11 +63,13 @@ services:
       - -c
       - hba_file=/etc/postgresql/pg_hba.conf
       - -c
-      - max_connections=500
+      - max_connections=${POSTGRES_MAX_CONNECTIONS:-1200}
       - -c
-      - superuser_reserved_connections=5
+      - superuser_reserved_connections=${POSTGRES_SUPERUSER_RESERVED:-10}
       - -c
       - idle_in_transaction_session_timeout=60s
+      - -c
+      - wal_keep_size=${POSTGRES_WAL_KEEP_SIZE:-2GB}
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./db/02-replication-user.sql:/docker-entrypoint-initdb.d/02-replication-user.sql:ro
@@ -93,6 +98,8 @@ services:
       POSTGRES_PASSWORD: postgres
       REPLICATOR_PASSWORD: replicator_pass
       PGDATA: /var/lib/postgresql/data
+      # Physical slot on primary so WAL is not recycled before this replica catches up (pair with wal_keep_size on primary).
+      REPLICATION_SLOT_NAME: ecommerce_replica_1
     command:
       - postgres
       - -c
@@ -102,11 +109,49 @@ services:
       - -c
       - hot_standby=on
       - -c
-      - max_connections=500
+      - max_connections=${POSTGRES_MAX_CONNECTIONS:-1200}
       - -c
-      - superuser_reserved_connections=5
+      - superuser_reserved_connections=${POSTGRES_SUPERUSER_RESERVED:-10}
     volumes:
       - postgres_replica_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ecommerce"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 600s
+    restart: unless-stopped
+
+  postgres-replica-2:
+    build:
+      context: ./db
+      dockerfile: Dockerfile.replica
+    image: ecommerce-postgres-replica:local
+    container_name: ecommerce-postgres-replica-2
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "5434:5432"
+    environment:
+      POSTGRES_PASSWORD: postgres
+      REPLICATOR_PASSWORD: replicator_pass
+      PGDATA: /var/lib/postgresql/data
+      REPLICATION_SLOT_NAME: ecommerce_replica_2
+    command:
+      - postgres
+      - -c
+      - max_wal_senders=16
+      - -c
+      - max_replication_slots=10
+      - -c
+      - hot_standby=on
+      - -c
+      - max_connections=${POSTGRES_MAX_CONNECTIONS:-1200}
+      - -c
+      - superuser_reserved_connections=${POSTGRES_SUPERUSER_RESERVED:-10}
+    volumes:
+      - postgres_replica2_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d ecommerce"]
       interval: 5s
@@ -209,6 +254,7 @@ services:
 volumes:
   postgres_data:
   postgres_replica_data:
+  postgres_replica2_data:
   prometheus_data:
   grafana_data:
   tempo_data:

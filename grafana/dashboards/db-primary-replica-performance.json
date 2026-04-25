@@ -19,7 +19,16 @@
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
   "id": null,
-  "links": [],
+  "links": [
+    {
+      "title": "Ecommerce observability (HTTP, Redis, pools)",
+      "type": "link",
+      "icon": "dashboard",
+      "url": "/d/ecommerce-observability/ecommerce-observability",
+      "keepTime": true,
+      "targetBlank": false
+    }
+  ],
   "panels": [
     {
       "datasource": {
@@ -123,21 +132,21 @@
       },
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
       "id": 4,
-      "title": "Replica Pool Connections",
+      "title": "Read replica pool connections",
       "targets": [
         {
-          "expr": "ecommerce_db_pool_connections{pool=\"replica\",state=\"acquired\"}",
-          "legendFormat": "acquired",
+          "expr": "ecommerce_db_pool_connections{pool=~\"replica-.*\",state=\"acquired\"}",
+          "legendFormat": "{{pool}} acquired",
           "refId": "A"
         },
         {
-          "expr": "ecommerce_db_pool_connections{pool=\"replica\",state=\"idle\"}",
-          "legendFormat": "idle",
+          "expr": "ecommerce_db_pool_connections{pool=~\"replica-.*\",state=\"idle\"}",
+          "legendFormat": "{{pool}} idle",
           "refId": "B"
         },
         {
-          "expr": "ecommerce_db_pool_connections{pool=\"replica\",state=\"total\"}",
-          "legendFormat": "total",
+          "expr": "ecommerce_db_pool_connections{pool=~\"replica-.*\",state=\"total\"}",
+          "legendFormat": "{{pool}} total",
           "refId": "C"
         }
       ],
@@ -165,8 +174,8 @@
           "refId": "A"
         },
         {
-          "expr": "ecommerce_db_pool_connections{pool=\"replica\",state=\"acquired\"} / clamp_min(ecommerce_db_pool_connections{pool=\"replica\",state=\"total\"}, 1)",
-          "legendFormat": "replica utilization",
+          "expr": "sum(ecommerce_db_pool_connections{pool=~\"replica-.*\",state=\"acquired\"}) / clamp_min(sum(ecommerce_db_pool_connections{pool=~\"replica-.*\",state=\"total\"}), 1)",
+          "legendFormat": "replicas utilization (aggregate)",
           "refId": "B"
         }
       ],
@@ -211,6 +220,6 @@
   "timezone": "browser",
   "title": "Database Primary vs Replica Performance",
   "uid": "db-primary-replica-performance",
-  "version": 1,
+  "version": 2,
   "weekStart": ""
 }

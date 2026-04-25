@@ -25,4 +25,6 @@ BEGIN
 END $$;
 
 CREATE INDEX IF NOT EXISTS idx_products_price ON products(price);
+-- List endpoint: ORDER BY id LIMIT 100 — INCLUDE helps index-only scans after VACUUM fills the visibility map.
+CREATE INDEX IF NOT EXISTS idx_products_id_list ON products (id) INCLUDE (name, price);
 ANALYZE products;

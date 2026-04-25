@@ -286,7 +286,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }
         let traceSearch = null;
         try {
-          traceSearch = await tempoSearchTraceql(
+          traceSearch = await tempoSearchTraceQL(
             `{ trace:duration > 400ms && resource.service.name = "ecommerce-api" }`,
             15
           );

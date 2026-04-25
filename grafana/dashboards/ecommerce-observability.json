@@ -19,7 +19,16 @@
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
   "id": null,
-  "links": [],
+  "links": [
+    {
+      "title": "Database primary vs replica performance",
+      "type": "link",
+      "icon": "dashboard",
+      "url": "/d/db-primary-replica-performance/database-primary-vs-replica-performance",
+      "keepTime": true,
+      "targetBlank": false
+    }
+  ],
   "panels": [
     {
       "datasource": {
@@ -133,18 +142,18 @@
           "refId": "C"
         },
         {
-          "expr": "ecommerce_db_pool_connections{pool=\"replica\",state=\"acquired\"}",
-          "legendFormat": "replica acquired",
+          "expr": "ecommerce_db_pool_connections{pool=~\"replica-.*\",state=\"acquired\"}",
+          "legendFormat": "{{pool}} acquired",
           "refId": "D"
         },
         {
-          "expr": "ecommerce_db_pool_connections{pool=\"replica\",state=\"idle\"}",
-          "legendFormat": "replica idle",
+          "expr": "ecommerce_db_pool_connections{pool=~\"replica-.*\",state=\"idle\"}",
+          "legendFormat": "{{pool}} idle",
           "refId": "E"
         },
         {
-          "expr": "ecommerce_db_pool_connections{pool=\"replica\",state=\"total\"}",
-          "legendFormat": "replica total",
+          "expr": "ecommerce_db_pool_connections{pool=~\"replica-.*\",state=\"total\"}",
+          "legendFormat": "{{pool}} total",
           "refId": "F"
         }
       ],
@@ -182,12 +191,41 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "short",
+          "unit": "s",
           "min": 0
         },
         "overrides": []
       },
       "gridPos": { "h": 8, "w": 24, "x": 0, "y": 16 },
+      "id": 7,
+      "title": "DB query duration P95 (vs HTTP latency row 1)",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(ecommerce_db_query_duration_seconds_bucket{query=\"select_products\"}[5m])) by (le))",
+          "legendFormat": "read select_products p95",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(ecommerce_db_query_duration_seconds_bucket{query=\"insert_product\"}[5m])) by (le))",
+          "legendFormat": "write insert_product p95",
+          "refId": "B"
+        }
+      ],
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 24 },
       "id": 6,
       "title": "Kafka Consumer Lag",
       "targets": [
@@ -210,6 +248,6 @@
   "timezone": "browser",
   "title": "Ecommerce Observability",
   "uid": "ecommerce-observability",
-  "version": 1,
+  "version": 2,
   "weekStart": ""
 }

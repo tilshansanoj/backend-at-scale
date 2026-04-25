@@ -11,8 +11,9 @@ type Config struct {
 	AppPort     string
 	Environment string
 
-	PostgresURL        string
-	PostgresReplicaURL string
+	PostgresURL string
+	// Non-empty DSNs from POSTGRES_REPLICA_URL (comma-separated). Empty => reads use primary only.
+	PostgresReplicaURLs []string
 	// Max open connections per pool (pgx). Keeps total clients under Postgres max_connections.
 	PostgresPoolMaxConns     int
 	PostgresReadPoolMaxConns int
@@ -35,9 +36,8 @@ func Load() Config {
 		ServiceName: getEnv("SERVICE_NAME", "ecommerce-api"),
 		AppPort:     getEnv("APP_PORT", "8080"),
 		Environment: getEnv("APP_ENV", "local"),
-		PostgresURL: getEnv("POSTGRES_URL", "postgres://postgres:postgres@postgres:5432/ecommerce?sslmode=disable"),
-		// Empty => use primary for reads as well (local `go run` without replica).
-		PostgresReplicaURL: strings.TrimSpace(os.Getenv("POSTGRES_REPLICA_URL")),
+		PostgresURL:         getEnv("POSTGRES_URL", "postgres://postgres:postgres@postgres:5432/ecommerce?sslmode=disable"),
+		PostgresReplicaURLs: splitAndTrim(os.Getenv("POSTGRES_REPLICA_URL")),
 		PostgresPoolMaxConns: clampInt(
 			getEnvInt("POSTGRES_POOL_MAX_CONNS", 25),
 			2,
