@@ -4,7 +4,8 @@ WORKDIR /app
 COPY go.mod ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -o /bin/api ./cmd/api
+RUN go mod tidy && go mod download
+RUN CGO_ENABLED=0 GOOS=linux go build -mod=mod -o /bin/api ./cmd/api
 
 FROM alpine:3.20
 
