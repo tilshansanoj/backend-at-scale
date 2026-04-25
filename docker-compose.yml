@@ -9,18 +9,23 @@ services:
     environment:
       SERVICE_NAME: "${SERVICE_NAME:-ecommerce-api}"
       APP_PORT: "8080"
+      APP_ENV: "${APP_ENV:-local}"
       POSTGRES_URL: "postgres://postgres:postgres@postgres:5432/ecommerce?sslmode=disable"
       REDIS_ADDR: "redis:6379"
       REDIS_PASSWORD: ""
       KAFKA_BROKERS: "kafka:9092"
       KAFKA_TOPIC: "${KAFKA_TOPIC:-product-events}"
       KAFKA_GROUP_ID: "${KAFKA_GROUP_ID:-ecommerce-observability}"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "${OTEL_EXPORTER_OTLP_ENDPOINT:-tempo:4317}"
+      OTEL_EXPORTER_OTLP_INSECURE: "${OTEL_EXPORTER_OTLP_INSECURE:-true}"
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
       kafka:
+        condition: service_started
+      tempo:
         condition: service_started
     restart: unless-stopped
 
@@ -107,6 +112,19 @@ services:
       - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
     depends_on:
       - prometheus
+      - tempo
+    restart: unless-stopped
+
+  tempo:
+    image: grafana/tempo:2.6.1
+    container_name: ecommerce-tempo
+    command: ["-config.file=/etc/tempo/tempo.yml"]
+    ports:
+      - "3200:3200"
+      - "4317:4317"
+    volumes:
+      - ./tempo/tempo.yml:/etc/tempo/tempo.yml:ro
+      - tempo_data:/tmp/tempo
     restart: unless-stopped
 
   k6:
@@ -124,3 +142,4 @@ volumes:
   postgres_data:
   prometheus_data:
   grafana_data:
+  tempo_data:

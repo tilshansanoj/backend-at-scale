@@ -20,6 +20,14 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
+	shutdownTrace, err := observability.InitTracing(ctx, cfg)
+	if err != nil {
+		log.Fatalf("otel tracing init failed: %v", err)
+	}
+	defer func() {
+		_ = shutdownTrace(context.Background())
+	}()
+
 	db, err := store.NewPostgres(ctx, cfg, metrics)
 	if err != nil {
 		log.Fatalf("postgres init failed: %v", err)

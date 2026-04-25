@@ -9,6 +9,9 @@ import (
 	"backend-at-scale/internal/config"
 	"backend-at-scale/internal/observability"
 	"github.com/segmentio/kafka-go"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 )
 
 type Event struct {
@@ -36,8 +39,18 @@ func NewConsumer(cfg config.Config) (*kafka.Reader, error) {
 }
 
 func Publish(ctx context.Context, writer *kafka.Writer, cfg config.Config, metrics *observability.Metrics, event Event) {
+	ctx, span := otel.Tracer("ecommerce.kafka").Start(ctx, "kafka.publish")
+	span.SetAttributes(
+		attribute.String("messaging.system", "kafka"),
+		attribute.String("messaging.destination", cfg.KafkaTopic),
+		attribute.String("event.type", event.Type),
+	)
+	defer span.End()
+
 	body, err := json.Marshal(event)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "marshal event failed")
 		metrics.KafkaPublish.WithLabelValues(cfg.ServiceName, cfg.KafkaTopic, "error").Inc()
 		return
 	}
@@ -49,6 +62,8 @@ func Publish(ctx context.Context, writer *kafka.Writer, cfg config.Config, metri
 	}
 
 	if err := writer.WriteMessages(ctx, msg); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "kafka publish failed")
 		metrics.KafkaPublish.WithLabelValues(cfg.ServiceName, cfg.KafkaTopic, "error").Inc()
 		return
 	}
@@ -69,9 +84,20 @@ func StartBackgroundConsumer(ctx context.Context, reader *kafka.Reader, metrics 
 			time.Sleep(250 * time.Millisecond)
 			continue
 		}
+
+		consumeCtx, span := otel.Tracer("ecommerce.kafka").Start(ctx, "kafka.consume")
+		span.SetAttributes(
+			attribute.String("messaging.system", "kafka"),
+			attribute.String("messaging.destination", cfg.KafkaTopic),
+			attribute.Int64("messaging.kafka.partition", int64(msg.Partition)),
+			attribute.Int64("messaging.kafka.offset", msg.Offset),
+		)
 		metrics.KafkaConsume.WithLabelValues(cfg.ServiceName, cfg.KafkaTopic, "success").Inc()
 
-		_ = reader.CommitMessages(ctx, msg)
+		if commitErr := reader.CommitMessages(consumeCtx, msg); commitErr != nil {
+			span.RecordError(commitErr)
+			span.SetStatus(codes.Error, "kafka commit failed")
+		}
 
 		lag := msg.HighWaterMark - msg.Offset - 1
 		if lag < 0 {
@@ -83,5 +109,7 @@ func StartBackgroundConsumer(ctx context.Context, reader *kafka.Reader, metrics 
 			strconv.Itoa(int(msg.Partition)),
 			cfg.KafkaGroupID,
 		).Set(float64(lag))
+		span.SetAttributes(attribute.Int64("messaging.kafka.consumer.lag", lag))
+		span.End()
 	}
 }

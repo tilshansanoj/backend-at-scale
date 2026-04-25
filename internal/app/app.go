@@ -5,6 +5,7 @@ import (
 	"backend-at-scale/internal/handlers"
 	"backend-at-scale/internal/middleware"
 	"backend-at-scale/internal/observability"
+	otelfiber "github.com/gofiber/contrib/otelfiber"
 	"backend-at-scale/internal/store"
 	"github.com/gofiber/adaptor/v2"
 	"github.com/gofiber/fiber/v2"
@@ -21,6 +22,7 @@ func NewServer(
 	metrics *observability.Metrics,
 ) *fiber.App {
 	app := fiber.New()
+	app.Use(otelfiber.Middleware(otelfiber.WithServiceName(cfg.ServiceName)))
 	app.Use(middleware.PrometheusHTTP(cfg, metrics))
 
 	productHandler := handlers.NewProductHandler(cfg, postgres, redisClient, producer, metrics)
