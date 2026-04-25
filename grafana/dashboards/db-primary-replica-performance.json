@@ -1,0 +1,216 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "id": 1,
+      "title": "DB Throughput (Reads vs Writes)",
+      "targets": [
+        {
+          "expr": "sum(rate(ecommerce_db_query_duration_seconds_count{query=\"select_products\"}[1m]))",
+          "legendFormat": "reads/sec (select_products)",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(ecommerce_db_query_duration_seconds_count{query=\"insert_product\"}[1m]))",
+          "legendFormat": "writes/sec (insert_product)",
+          "refId": "B"
+        }
+      ],
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "id": 2,
+      "title": "DB Query Latency P95",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(ecommerce_db_query_duration_seconds_bucket{query=\"select_products\"}[5m])) by (le))",
+          "legendFormat": "read p95",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(ecommerce_db_query_duration_seconds_bucket{query=\"insert_product\"}[5m])) by (le))",
+          "legendFormat": "write p95",
+          "refId": "B"
+        }
+      ],
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "id": 3,
+      "title": "Primary Pool Connections",
+      "targets": [
+        {
+          "expr": "ecommerce_db_pool_connections{pool=\"primary\",state=\"acquired\"}",
+          "legendFormat": "acquired",
+          "refId": "A"
+        },
+        {
+          "expr": "ecommerce_db_pool_connections{pool=\"primary\",state=\"idle\"}",
+          "legendFormat": "idle",
+          "refId": "B"
+        },
+        {
+          "expr": "ecommerce_db_pool_connections{pool=\"primary\",state=\"total\"}",
+          "legendFormat": "total",
+          "refId": "C"
+        }
+      ],
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "id": 4,
+      "title": "Replica Pool Connections",
+      "targets": [
+        {
+          "expr": "ecommerce_db_pool_connections{pool=\"replica\",state=\"acquired\"}",
+          "legendFormat": "acquired",
+          "refId": "A"
+        },
+        {
+          "expr": "ecommerce_db_pool_connections{pool=\"replica\",state=\"idle\"}",
+          "legendFormat": "idle",
+          "refId": "B"
+        },
+        {
+          "expr": "ecommerce_db_pool_connections{pool=\"replica\",state=\"total\"}",
+          "legendFormat": "total",
+          "refId": "C"
+        }
+      ],
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "id": 5,
+      "title": "Pool Utilization (Acquired / Total)",
+      "targets": [
+        {
+          "expr": "ecommerce_db_pool_connections{pool=\"primary\",state=\"acquired\"} / clamp_min(ecommerce_db_pool_connections{pool=\"primary\",state=\"total\"}, 1)",
+          "legendFormat": "primary utilization",
+          "refId": "A"
+        },
+        {
+          "expr": "ecommerce_db_pool_connections{pool=\"replica\",state=\"acquired\"} / clamp_min(ecommerce_db_pool_connections{pool=\"replica\",state=\"total\"}, 1)",
+          "legendFormat": "replica utilization",
+          "refId": "B"
+        }
+      ],
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "id": 6,
+      "title": "Read Pressure Indicators",
+      "targets": [
+        {
+          "expr": "sum(rate(ecommerce_redis_cache_total{operation=\"get\",result=\"miss\"}[1m]))",
+          "legendFormat": "cache misses/sec",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(ecommerce_db_query_duration_seconds_count{query=\"select_products\"}[1m]))",
+          "legendFormat": "db reads/sec",
+          "refId": "B"
+        }
+      ],
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "5s",
+  "schemaVersion": 39,
+  "style": "dark",
+  "tags": ["database", "postgres", "replica", "performance"],
+  "templating": { "list": [] },
+  "time": { "from": "now-30m", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Database Primary vs Replica Performance",
+  "uid": "db-primary-replica-performance",
+  "version": 1,
+  "weekStart": ""
+}

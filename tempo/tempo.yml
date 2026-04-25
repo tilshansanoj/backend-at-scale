@@ -24,6 +24,5 @@ storage:
       path: /tmp/tempo/blocks
 
 overrides:
-  defaults:
-    # Local stress tests can easily exceed the default 10k live traces.
-    max_traces_per_user: 50000
+  # Local stress tests can easily exceed the default 10k live traces.
+  max_traces_per_user: 50000
