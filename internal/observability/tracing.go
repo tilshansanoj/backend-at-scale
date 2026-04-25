@@ -15,19 +15,15 @@ import (
 )
 
 func InitTracing(ctx context.Context, cfg config.Config) (func(context.Context) error, error) {
-	client := otlptracegrpc.NewClient(
+	exporterOpts := []otlptracegrpc.Option{
 		otlptracegrpc.WithEndpoint(cfg.OTELExporterEndpoint),
 		otlptracegrpc.WithTimeout(5*time.Second),
-	)
+	}
 	if cfg.OTELInsecure {
-		client = otlptracegrpc.NewClient(
-			otlptracegrpc.WithEndpoint(cfg.OTELExporterEndpoint),
-			otlptracegrpc.WithInsecure(),
-			otlptracegrpc.WithTimeout(5*time.Second),
-		)
+		exporterOpts = append(exporterOpts, otlptracegrpc.WithInsecure())
 	}
 
-	exporter, err := otlptracegrpc.New(ctx, client)
+	exporter, err := otlptracegrpc.New(ctx, exporterOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("create otlp trace exporter: %w", err)
 	}
@@ -36,7 +32,7 @@ func InitTracing(ctx context.Context, cfg config.Config) (func(context.Context) 
 		ctx,
 		resource.WithAttributes(
 			semconv.ServiceName(cfg.ServiceName),
-			semconv.DeploymentEnvironmentName(cfg.Environment),
+			semconv.DeploymentEnvironmentKey.String(cfg.Environment),
 		),
 	)
 	if err != nil {

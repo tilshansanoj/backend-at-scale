@@ -7,12 +7,12 @@ import (
 	"time"
 
 	"backend-at-scale/internal/config"
-	"backend-at-scale/internal/kafka"
+	appkafka "backend-at-scale/internal/kafka"
 	"backend-at-scale/internal/observability"
 	"backend-at-scale/internal/store"
 	"github.com/gofiber/fiber/v2"
 	"github.com/redis/go-redis/v9"
-	"github.com/segmentio/kafka-go"
+	kafkago "github.com/segmentio/kafka-go"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -22,7 +22,7 @@ type ProductHandler struct {
 	cfg      config.Config
 	postgres *store.PostgresStore
 	redis    *redis.Client
-	producer *kafka.Writer
+	producer *kafkago.Writer
 	metrics  *observability.Metrics
 }
 
@@ -30,7 +30,7 @@ func NewProductHandler(
 	cfg config.Config,
 	postgres *store.PostgresStore,
 	redisClient *redis.Client,
-	producer *kafka.Writer,
+	producer *kafkago.Writer,
 	metrics *observability.Metrics,
 ) *ProductHandler {
 	return &ProductHandler{
@@ -55,7 +55,7 @@ func (h *ProductHandler) GetProducts(c *fiber.Ctx) error {
 	cacheSpan.End()
 	if err == nil {
 		h.metrics.RedisCacheTotal.WithLabelValues(h.cfg.ServiceName, "get", "hit").Inc()
-		kafka.Publish(ctx, h.producer, h.cfg, h.metrics, kafka.Event{
+		appkafka.Publish(ctx, h.producer, h.cfg, h.metrics, appkafka.Event{
 			Type:      "products.list.cache_hit",
 			Route:     "/products",
 			Timestamp: time.Now().UTC(),
@@ -91,7 +91,7 @@ func (h *ProductHandler) GetProducts(c *fiber.Ctx) error {
 		setSpan.End()
 	}
 
-	kafka.Publish(ctx, h.producer, h.cfg, h.metrics, kafka.Event{
+	appkafka.Publish(ctx, h.producer, h.cfg, h.metrics, appkafka.Event{
 		Type:      "products.list.db_read",
 		Route:     "/products",
 		Timestamp: time.Now().UTC(),

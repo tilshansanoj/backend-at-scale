@@ -22,7 +22,7 @@ func NewServer(
 	metrics *observability.Metrics,
 ) *fiber.App {
 	app := fiber.New()
-	app.Use(otelfiber.Middleware(otelfiber.WithServiceName(cfg.ServiceName)))
+	app.Use(otelfiber.Middleware())
 	app.Use(middleware.PrometheusHTTP(cfg, metrics))
 
 	productHandler := handlers.NewProductHandler(cfg, postgres, redisClient, producer, metrics)
