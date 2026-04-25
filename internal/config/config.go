@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -10,7 +11,8 @@ type Config struct {
 	AppPort     string
 	Environment string
 
-	PostgresURL string
+	PostgresURL        string
+	PostgresReplicaURL string
 	RedisAddr   string
 	RedisPass   string
 	RedisDB     int
@@ -18,6 +20,8 @@ type Config struct {
 	KafkaBrokers []string
 	KafkaTopic   string
 	KafkaGroupID string
+	KafkaAsyncQueueSize int
+	KafkaAsyncWorkers   int
 
 	OTELExporterEndpoint string
 	OTELInsecure         bool
@@ -29,6 +33,8 @@ func Load() Config {
 		AppPort:     getEnv("APP_PORT", "8080"),
 		Environment: getEnv("APP_ENV", "local"),
 		PostgresURL: getEnv("POSTGRES_URL", "postgres://postgres:postgres@postgres:5432/ecommerce?sslmode=disable"),
+		// Empty => use primary for reads as well (local `go run` without replica).
+		PostgresReplicaURL: strings.TrimSpace(os.Getenv("POSTGRES_REPLICA_URL")),
 		RedisAddr:   getEnv("REDIS_ADDR", "redis:6379"),
 		RedisPass:   getEnv("REDIS_PASSWORD", ""),
 		RedisDB:     0,
@@ -37,6 +43,12 @@ func Load() Config {
 		),
 		KafkaTopic:   getEnv("KAFKA_TOPIC", "product-events"),
 		KafkaGroupID: getEnv("KAFKA_GROUP_ID", "ecommerce-observability"),
+		KafkaAsyncQueueSize: clampInt(
+			getEnvInt("KAFKA_ASYNC_QUEUE_SIZE", 16384),
+			256,
+			500_000,
+		),
+		KafkaAsyncWorkers: clampInt(getEnvInt("KAFKA_ASYNC_WORKERS", 2), 1, 32),
 		OTELExporterEndpoint: getEnv("OTEL_EXPORTER_OTLP_ENDPOINT", "tempo:4317"),
 		OTELInsecure:         getEnv("OTEL_EXPORTER_OTLP_INSECURE", "true") == "true",
 	}
@@ -47,6 +59,28 @@ func getEnv(key, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+func getEnvInt(key string, fallback int) int {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return fallback
+	}
+	return n
+}
+
+func clampInt(v, min, max int) int {
+	if v < min {
+		return min
+	}
+	if v > max {
+		return max
+	}
+	return v
 }
 
 func splitAndTrim(value string) []string {

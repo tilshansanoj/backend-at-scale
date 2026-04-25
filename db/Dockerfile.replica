@@ -1,0 +1,9 @@
+# Standalone build context: docker compose build with context ./db (not affected by repo-root .dockerignore db/ exclude).
+FROM postgres:16-alpine
+COPY replica-entrypoint.sh /usr/local/bin/replica-entrypoint.sh
+# Strip Windows CRLF so ash never sees `set -e^M` ("illegal option -").
+RUN tr -d '\015' < /usr/local/bin/replica-entrypoint.sh > /tmp/replica-entrypoint.sh \
+	&& mv /tmp/replica-entrypoint.sh /usr/local/bin/replica-entrypoint.sh \
+	&& chmod +x /usr/local/bin/replica-entrypoint.sh
+ENTRYPOINT ["sh", "/usr/local/bin/replica-entrypoint.sh"]
+CMD ["postgres"]

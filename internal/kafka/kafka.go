@@ -38,7 +38,8 @@ func NewConsumer(cfg config.Config) (*kafka.Reader, error) {
 	return reader, nil
 }
 
-func Publish(ctx context.Context, writer *kafka.Writer, cfg config.Config, metrics *observability.Metrics, event Event) {
+// publishSync writes one message to Kafka and records metrics/traces. Used by AsyncPublisher workers.
+func publishSync(ctx context.Context, writer *kafka.Writer, cfg config.Config, metrics *observability.Metrics, event Event) {
 	ctx, span := otel.Tracer("ecommerce.kafka").Start(ctx, "kafka.publish")
 	span.SetAttributes(
 		attribute.String("messaging.system", "kafka"),

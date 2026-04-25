@@ -22,14 +22,3 @@ storage:
       path: /tmp/tempo/wal
     local:
       path: /tmp/tempo/blocks
-
-metrics_generator:
-  registry:
-    external_labels:
-      source: tempo
-      cluster: docker-compose
-
-overrides:
-  defaults:
-    metrics_generator:
-      processors: [service-graphs, span-metrics]

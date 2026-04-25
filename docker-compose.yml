@@ -11,15 +11,20 @@ services:
       APP_PORT: "8080"
       APP_ENV: "${APP_ENV:-local}"
       POSTGRES_URL: "postgres://postgres:postgres@postgres:5432/ecommerce?sslmode=disable"
+      POSTGRES_REPLICA_URL: "postgres://postgres:postgres@postgres-replica:5432/ecommerce?sslmode=disable"
       REDIS_ADDR: "redis:6379"
       REDIS_PASSWORD: ""
       KAFKA_BROKERS: "kafka:9092"
       KAFKA_TOPIC: "${KAFKA_TOPIC:-product-events}"
       KAFKA_GROUP_ID: "${KAFKA_GROUP_ID:-ecommerce-observability}"
+      KAFKA_ASYNC_QUEUE_SIZE: "${KAFKA_ASYNC_QUEUE_SIZE:-16384}"
+      KAFKA_ASYNC_WORKERS: "${KAFKA_ASYNC_WORKERS:-2}"
       OTEL_EXPORTER_OTLP_ENDPOINT: "${OTEL_EXPORTER_OTLP_ENDPOINT:-tempo:4317}"
       OTEL_EXPORTER_OTLP_INSECURE: "${OTEL_EXPORTER_OTLP_INSECURE:-true}"
     depends_on:
       postgres:
+        condition: service_healthy
+      postgres-replica:
         condition: service_healthy
       redis:
         condition: service_healthy
@@ -38,14 +43,64 @@ services:
       POSTGRES_PASSWORD: postgres
     ports:
       - "5432:5432"
+    command:
+      - postgres
+      - -c
+      - wal_level=replica
+      - -c
+      - max_wal_senders=16
+      - -c
+      - max_replication_slots=10
+      - -c
+      - hot_standby=on
+      - -c
+      - listen_addresses=*
+      - -c
+      - hba_file=/etc/postgresql/pg_hba.conf
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./db/02-replication-user.sql:/docker-entrypoint-initdb.d/02-replication-user.sql:ro
       - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - ./db/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d ecommerce"]
       interval: 5s
       timeout: 5s
-      retries: 20
+      retries: 30
+      start_period: 30s
+    restart: unless-stopped
+
+  postgres-replica:
+    build:
+      context: ./db
+      dockerfile: Dockerfile.replica
+    image: ecommerce-postgres-replica:local
+    container_name: ecommerce-postgres-replica
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_PASSWORD: postgres
+      REPLICATOR_PASSWORD: replicator_pass
+      PGDATA: /var/lib/postgresql/data
+    command:
+      - postgres
+      - -c
+      - max_wal_senders=16
+      - -c
+      - max_replication_slots=10
+      - -c
+      - hot_standby=on
+    volumes:
+      - postgres_replica_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ecommerce"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 600s
     restart: unless-stopped
 
   redis:
@@ -141,6 +196,7 @@ services:
 
 volumes:
   postgres_data:
+  postgres_replica_data:
   prometheus_data:
   grafana_data:
   tempo_data:

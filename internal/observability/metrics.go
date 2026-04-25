@@ -7,7 +7,8 @@ type Metrics struct {
 	HTTPRequestDur   *prometheus.HistogramVec
 	DBQueryDur       *prometheus.HistogramVec
 	RedisCacheTotal  *prometheus.CounterVec
-	KafkaPublish     *prometheus.CounterVec
+	KafkaPublish       *prometheus.CounterVec
+	KafkaAsyncEnqueue  *prometheus.CounterVec
 	KafkaConsume     *prometheus.CounterVec
 	KafkaLagGauge    *prometheus.GaugeVec
 	DBPoolConns      *prometheus.GaugeVec
@@ -64,6 +65,15 @@ func NewMetrics(service string) *Metrics {
 			},
 			[]string{"service", "topic", "status"},
 		),
+		KafkaAsyncEnqueue: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Namespace: namespace,
+				Subsystem: "kafka",
+				Name:      "async_enqueue_total",
+				Help:      "Kafka async publisher enqueue outcomes (accepted vs dropped when queue is full).",
+			},
+			[]string{"service", "result"},
+		),
 		KafkaConsume: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
 				Namespace: namespace,
@@ -87,9 +97,9 @@ func NewMetrics(service string) *Metrics {
 				Namespace: namespace,
 				Subsystem: "db",
 				Name:      "pool_connections",
-				Help:      "DB pool connections by state.",
+				Help:      "DB pool connections by state (pool=primary|replica).",
 			},
-			[]string{"service", "state"},
+			[]string{"service", "pool", "state"},
 		),
 	}
 
@@ -99,6 +109,7 @@ func NewMetrics(service string) *Metrics {
 		m.DBQueryDur,
 		m.RedisCacheTotal,
 		m.KafkaPublish,
+		m.KafkaAsyncEnqueue,
 		m.KafkaConsume,
 		m.KafkaLagGauge,
 		m.DBPoolConns,

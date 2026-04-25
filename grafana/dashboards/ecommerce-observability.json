@@ -118,19 +118,34 @@
       "title": "DB Pool Usage",
       "targets": [
         {
-          "expr": "ecommerce_db_pool_connections{state=\"acquired\"}",
-          "legendFormat": "acquired",
+          "expr": "ecommerce_db_pool_connections{pool=\"primary\",state=\"acquired\"}",
+          "legendFormat": "primary acquired",
           "refId": "A"
         },
         {
-          "expr": "ecommerce_db_pool_connections{state=\"idle\"}",
-          "legendFormat": "idle",
+          "expr": "ecommerce_db_pool_connections{pool=\"primary\",state=\"idle\"}",
+          "legendFormat": "primary idle",
           "refId": "B"
         },
         {
-          "expr": "ecommerce_db_pool_connections{state=\"total\"}",
-          "legendFormat": "total",
+          "expr": "ecommerce_db_pool_connections{pool=\"primary\",state=\"total\"}",
+          "legendFormat": "primary total",
           "refId": "C"
+        },
+        {
+          "expr": "ecommerce_db_pool_connections{pool=\"replica\",state=\"acquired\"}",
+          "legendFormat": "replica acquired",
+          "refId": "D"
+        },
+        {
+          "expr": "ecommerce_db_pool_connections{pool=\"replica\",state=\"idle\"}",
+          "legendFormat": "replica idle",
+          "refId": "E"
+        },
+        {
+          "expr": "ecommerce_db_pool_connections{pool=\"replica\",state=\"total\"}",
+          "legendFormat": "replica total",
+          "refId": "F"
         }
       ],
       "type": "timeseries"

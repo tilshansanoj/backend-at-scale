@@ -40,6 +40,13 @@ func main() {
 	producer := kafka.NewProducer(cfg)
 	defer producer.Close()
 
+	pubCtx, pubStop := context.WithCancel(context.Background())
+	kafkaPub := kafka.NewAsyncPublisher(pubCtx, producer, cfg, metrics)
+	defer func() {
+		pubStop()
+		kafkaPub.Wait()
+	}()
+
 	consumer, err := kafka.NewConsumer(cfg)
 	if err != nil {
 		log.Fatalf("kafka consumer init failed: %v", err)
@@ -48,7 +55,7 @@ func main() {
 
 	go kafka.StartBackgroundConsumer(ctx, consumer, metrics, cfg)
 
-	server := app.NewServer(cfg, db, redisClient, producer, metrics)
+	server := app.NewServer(cfg, db, redisClient, kafkaPub, metrics)
 	if err := server.Listen(":" + cfg.AppPort); err != nil {
 		log.Fatalf("server failed: %v", err)
 	}

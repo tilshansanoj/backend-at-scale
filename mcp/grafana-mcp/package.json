@@ -1,0 +1,19 @@
+{
+  "name": "grafana-observability-mcp",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "MCP server: Grafana dashboards + Prometheus + Tempo for local debugging",
+  "bin": {
+    "grafana-observability-mcp": "./src/server.mjs"
+  },
+  "scripts": {
+    "start": "node src/server.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0"
+  }
+}

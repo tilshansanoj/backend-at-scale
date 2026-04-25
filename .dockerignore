@@ -1,0 +1,49 @@
+# Git / VCS
+.git
+.gitignore
+.gitattributes
+
+# IDE / OS junk
+.idea
+.vscode
+**/.DS_Store
+Thumbs.db
+
+# Compose & secrets (runtime on host, not in app image)
+docker-compose.yml
+docker-compose.*.yml
+.env
+.env.*
+*.local
+
+# Docs (not used by `go build`)
+*.md
+LICENSE
+
+# Observability & load tests (not imported by the Go binary)
+grafana/
+prometheus/
+tempo/
+k6/
+mcp/
+
+# Postgres files (used by postgres/replica containers, not the API build)
+db/
+
+# Go: tests and vendored deps (if you add them later)
+**/vendor/
+**/*_test.go
+**/testdata/
+
+# Build artifacts / local binaries
+/bin/
+/dist/
+/tmp/
+*.exe
+*.dll
+*.so
+*.dylib
+coverage.*
+*.out
+*.test
+*.coverprofile

@@ -1,0 +1,4 @@
+# Replica image build (context ./db): only entrypoint + Dockerfile are used; skip large SQL/config.
+init.sql
+02-replication-user.sql
+pg_hba.conf
