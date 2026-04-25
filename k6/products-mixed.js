@@ -7,14 +7,14 @@ export const options = {
   scenarios: {
     mixed: {
       executor: "ramping-arrival-rate",
-      startRate: 50,
+      startRate: 250,
       timeUnit: "1s",
-      preAllocatedVUs: 100,
-      maxVUs: 1000,
+      preAllocatedVUs: 500,
+      maxVUs: 6000,
       stages: [
-        { target: 200, duration: "1m" },
-        { target: 400, duration: "2m" },
-        { target: 600, duration: "2m" }
+        { target: 800, duration: "1m" },
+        { target: 1800, duration: "2m" },
+        { target: 3000, duration: "2m" }
       ]
     }
   },
@@ -37,5 +37,5 @@ export default function () {
     const res = http.get(`${BASE_URL}/products`);
     check(res, { "GET /products 200": (r) => r.status === 200 });
   }
-  sleep(0.05);
+  sleep(0.02);
 }

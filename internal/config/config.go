@@ -13,6 +13,9 @@ type Config struct {
 
 	PostgresURL        string
 	PostgresReplicaURL string
+	// Max open connections per pool (pgx). Keeps total clients under Postgres max_connections.
+	PostgresPoolMaxConns     int
+	PostgresReadPoolMaxConns int
 	RedisAddr   string
 	RedisPass   string
 	RedisDB     int
@@ -35,6 +38,16 @@ func Load() Config {
 		PostgresURL: getEnv("POSTGRES_URL", "postgres://postgres:postgres@postgres:5432/ecommerce?sslmode=disable"),
 		// Empty => use primary for reads as well (local `go run` without replica).
 		PostgresReplicaURL: strings.TrimSpace(os.Getenv("POSTGRES_REPLICA_URL")),
+		PostgresPoolMaxConns: clampInt(
+			getEnvInt("POSTGRES_POOL_MAX_CONNS", 25),
+			2,
+			500,
+		),
+		PostgresReadPoolMaxConns: clampInt(
+			getEnvInt("POSTGRES_READ_POOL_MAX_CONNS", 60),
+			2,
+			500,
+		),
 		RedisAddr:   getEnv("REDIS_ADDR", "redis:6379"),
 		RedisPass:   getEnv("REDIS_PASSWORD", ""),
 		RedisDB:     0,

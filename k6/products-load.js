@@ -7,15 +7,15 @@ export const options = {
   scenarios: {
     products_rps_test: {
       executor: "ramping-arrival-rate",
-      startRate: 100,
+      startRate: 300,
       timeUnit: "1s",
-      preAllocatedVUs: 200,
-      maxVUs: 2000,
+      preAllocatedVUs: 600,
+      maxVUs: 8000,
       stages: [
-        { target: 300, duration: "1m" },
-        { target: 600, duration: "2m" },
-        { target: 1000, duration: "3m" },
-        { target: 1000, duration: "2m" }
+        { target: 1200, duration: "1m" },
+        { target: 2500, duration: "2m" },
+        { target: 4000, duration: "3m" },
+        { target: 4000, duration: "2m" }
       ]
     }
   },
@@ -30,5 +30,5 @@ export default function () {
   check(res, {
     "status is 200": (r) => r.status === 200
   });
-  sleep(0.1);
+  sleep(0.02);
 }
