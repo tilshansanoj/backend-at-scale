@@ -6,7 +6,7 @@ Production-ready Go ecommerce backend with full local observability stack:
 - Dashboards: Grafana (auto-provisioned)
 - Load test: k6
 - Kafka product events: async bounded queue (handlers do not block on `WriteMessages`)
-- Kafka product writes: `POST /products` enqueues command and consumer persists to Postgres
+- Kafka product writes: `POST /products` enqueues to Redis-backed queue (DB configurable), workers publish to Kafka, consumer persists to Postgres
 - MCP (optional): Grafana + Prometheus — [mcp/grafana-mcp/README.md](mcp/grafana-mcp/README.md); Postgres — [mcp/postgres-mcp/README.md](mcp/postgres-mcp/README.md)
 
 ## Quick start
@@ -30,7 +30,7 @@ Production-ready Go ecommerce backend with full local observability stack:
 ## API
 
 - `GET /products` — list (cached; reads round-robin across **replica** DSNs when `POSTGRES_REPLICA_URL` lists one or more URLs)
-- `POST /products` — enqueue write command `{"name":"...","price":99.99}` and returns `202 Accepted` with `request_id`; request path uses bounded async queue (backpressure returns `503` when full), Kafka consumer writes to **primary** and invalidates list cache
+- `POST /products` — enqueue write command `{"name":"...","price":99.99}` and returns `202 Accepted` with `request_id`; request path uses bounded Redis queue (backpressure returns `503` when full), workers publish to Kafka, consumer writes to **primary** and invalidates list cache
 
 ## Run load test
 

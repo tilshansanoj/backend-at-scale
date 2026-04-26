@@ -37,6 +37,12 @@ func NewProducer(cfg config.Config, topic string) *kafka.Writer {
 		Addr:     kafka.TCP(cfg.KafkaBrokers...),
 		Topic:    topic,
 		Balancer: &kafka.LeastBytes{},
+		BatchTimeout: time.Duration(cfg.KafkaProducerBatchTimeoutMS) * time.Millisecond,
+		BatchBytes:   int64(cfg.KafkaProducerBatchBytes),
+		RequiredAcks: kafka.RequireOne,
+		MaxAttempts:  cfg.KafkaProducerMaxAttempts,
+		WriteTimeout: 10 * time.Second,
+		ReadTimeout:  10 * time.Second,
 	}
 }
 

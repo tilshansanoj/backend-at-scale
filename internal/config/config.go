@@ -22,8 +22,11 @@ type Config struct {
 	RedisAddr   string
 	RedisPass   string
 	RedisDB     int
+	RedisQueueDB int
 	RedisPoolSize      int
 	RedisMinIdleConns  int
+	RedisCommandQueueKey    string
+	RedisCommandQueueMaxLen int
 
 	KafkaBrokers []string
 	KafkaTopic   string
@@ -32,6 +35,9 @@ type Config struct {
 	KafkaCommandsGroupID string
 	KafkaAsyncQueueSize int
 	KafkaAsyncWorkers   int
+	KafkaProducerBatchTimeoutMS int
+	KafkaProducerBatchBytes     int
+	KafkaProducerMaxAttempts    int
 
 	OTELExporterEndpoint string
 	OTELInsecure         bool
@@ -71,6 +77,7 @@ func Load() Config {
 		RedisAddr:   getEnv("REDIS_ADDR", "redis:6379"),
 		RedisPass:   getEnv("REDIS_PASSWORD", ""),
 		RedisDB:     0,
+		RedisQueueDB: clampInt(getEnvInt("REDIS_QUEUE_DB", 1), 0, 15),
 		RedisPoolSize: clampInt(
 			getEnvInt("REDIS_POOL_SIZE", 128),
 			10,
@@ -80,6 +87,12 @@ func Load() Config {
 			getEnvInt("REDIS_MIN_IDLE_CONNS", 32),
 			0,
 			200,
+		),
+		RedisCommandQueueKey: getEnv("REDIS_COMMAND_QUEUE_KEY", "products:create:queue:v1"),
+		RedisCommandQueueMaxLen: clampInt(
+			getEnvInt("REDIS_COMMAND_QUEUE_MAX_LEN", 100000),
+			1000,
+			2_000_000,
 		),
 		KafkaBrokers: splitAndTrim(
 			getEnv("KAFKA_BROKERS", "kafka:9092"),
@@ -94,6 +107,9 @@ func Load() Config {
 			500_000,
 		),
 		KafkaAsyncWorkers: clampInt(getEnvInt("KAFKA_ASYNC_WORKERS", 2), 1, 32),
+		KafkaProducerBatchTimeoutMS: clampInt(getEnvInt("KAFKA_PRODUCER_BATCH_TIMEOUT_MS", 20), 1, 1000),
+		KafkaProducerBatchBytes: clampInt(getEnvInt("KAFKA_PRODUCER_BATCH_BYTES", 65536), 1024, 1048576),
+		KafkaProducerMaxAttempts: clampInt(getEnvInt("KAFKA_PRODUCER_MAX_ATTEMPTS", 10), 1, 100),
 		OTELExporterEndpoint: getEnv("OTEL_EXPORTER_OTLP_ENDPOINT", "tempo:4317"),
 		OTELInsecure:         getEnv("OTEL_EXPORTER_OTLP_INSECURE", "true") == "true",
 		OTELTraceSampleRatio: clampFloat(

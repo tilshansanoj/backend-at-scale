@@ -28,6 +28,8 @@ func main() {
 
 	redisClient := store.NewRedis(cfg)
 	defer redisClient.Close()
+	redisQueueClient := store.NewRedisWithDB(cfg, cfg.RedisQueueDB)
+	defer redisQueueClient.Close()
 
 	eventsProducer := kafka.NewProducer(cfg, cfg.KafkaTopic)
 	defer eventsProducer.Close()
@@ -36,7 +38,7 @@ func main() {
 
 	pubCtx, pubStop := context.WithCancel(context.Background())
 	kafkaPub := kafka.NewAsyncPublisher(pubCtx, eventsProducer, cfg, metrics)
-	kafkaCmd := kafka.NewAsyncCommandProducer(pubCtx, commandsProducer, cfg, metrics)
+	kafkaCmd := kafka.NewAsyncCommandProducer(pubCtx, redisQueueClient, commandsProducer, cfg, metrics)
 	defer func() {
 		pubStop()
 		kafkaPub.Wait()

@@ -8,10 +8,14 @@ import (
 )
 
 func NewRedis(cfg config.Config) *redis.Client {
+	return NewRedisWithDB(cfg, cfg.RedisDB)
+}
+
+func NewRedisWithDB(cfg config.Config, db int) *redis.Client {
 	return redis.NewClient(&redis.Options{
 		Addr:     cfg.RedisAddr,
 		Password: cfg.RedisPass,
-		DB:       cfg.RedisDB,
+		DB:       db,
 		PoolSize:        cfg.RedisPoolSize,
 		MinIdleConns:    cfg.RedisMinIdleConns,
 		ConnMaxIdleTime: 5 * time.Minute,
