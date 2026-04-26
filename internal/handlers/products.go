@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strconv"
 	"sync"
 	"strings"
 	"time"
@@ -31,6 +32,7 @@ type ProductHandler struct {
 	postgres *store.PostgresStore
 	redis    *redis.Client
 	kafkaPub *appkafka.AsyncPublisher
+	kafkaCmd *appkafka.AsyncCommandProducer
 	metrics  *observability.Metrics
 
 	listMu       sync.Mutex
@@ -44,6 +46,7 @@ func NewProductHandler(
 	postgres *store.PostgresStore,
 	redisClient *redis.Client,
 	kafkaPub *appkafka.AsyncPublisher,
+	kafkaCmd *appkafka.AsyncCommandProducer,
 	metrics *observability.Metrics,
 ) *ProductHandler {
 	return &ProductHandler{
@@ -51,6 +54,7 @@ func NewProductHandler(
 		postgres: postgres,
 		redis:    redisClient,
 		kafkaPub: kafkaPub,
+		kafkaCmd: kafkaCmd,
 		metrics:  metrics,
 	}
 }
@@ -134,22 +138,28 @@ func (h *ProductHandler) CreateProduct(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "price must be greater than 0 and at most 1000000"})
 	}
 
-	p, err := h.postgres.InsertProduct(ctx, req.Name, req.Price)
-	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "insert failed")
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to create product"})
+	requestID := strconv.FormatInt(time.Now().UTC().UnixNano(), 10)
+	ok := h.kafkaCmd.TryEnqueue(appkafka.CreateProductCommand{
+		RequestID: requestID,
+		Name:      req.Name,
+		Price:     req.Price,
+		Timestamp: time.Now().UTC(),
+	})
+	if !ok {
+		span.SetStatus(codes.Error, "command queue full")
+		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "failed to enqueue product creation"})
 	}
 
-	_ = h.redis.Del(ctx, productsListCacheKey).Err()
-
 	h.kafkaPub.TryEnqueue(appkafka.Event{
-		Type:      "products.created",
+		Type:      "products.create.enqueued",
 		Route:     "/products",
 		Timestamp: time.Now().UTC(),
 	})
 
-	return c.Status(fiber.StatusCreated).JSON(p)
+	return c.Status(fiber.StatusAccepted).JSON(fiber.Map{
+		"request_id": requestID,
+		"status":     "accepted",
+	})
 }
 
 func (h *ProductHandler) getProductsCoalesced(ctx context.Context) ([]store.Product, error) {

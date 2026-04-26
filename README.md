@@ -3,11 +3,11 @@
 Production-ready Go ecommerce backend with full local observability stack:
 - API: Fiber + PostgreSQL (primary + read replicas) + Redis + Kafka
 - Metrics: Prometheus
-- Traces: OpenTelemetry + Tempo
 - Dashboards: Grafana (auto-provisioned)
 - Load test: k6
 - Kafka product events: async bounded queue (handlers do not block on `WriteMessages`)
-- MCP (optional): Grafana + Prometheus + Tempo — [mcp/grafana-mcp/README.md](mcp/grafana-mcp/README.md); Postgres — [mcp/postgres-mcp/README.md](mcp/postgres-mcp/README.md)
+- Kafka product writes: `POST /products` enqueues command and consumer persists to Postgres
+- MCP (optional): Grafana + Prometheus — [mcp/grafana-mcp/README.md](mcp/grafana-mcp/README.md); Postgres — [mcp/postgres-mcp/README.md](mcp/postgres-mcp/README.md)
 
 ## Quick start
 
@@ -25,13 +25,12 @@ Production-ready Go ecommerce backend with full local observability stack:
    - Metrics: [http://localhost:8080/metrics](http://localhost:8080/metrics)
    - Prometheus: [http://localhost:9090](http://localhost:9090)
    - Grafana: [http://localhost:3000](http://localhost:3000)
-   - Tempo API: [http://localhost:3200](http://localhost:3200)
    - Postgres primary: `localhost:5432`, read replicas: `localhost:5433`, `localhost:5434`
 
 ## API
 
 - `GET /products` — list (cached; reads round-robin across **replica** DSNs when `POSTGRES_REPLICA_URL` lists one or more URLs)
-- `POST /products` — insert `{"name":"...","price":99.99}` (writes go to **primary**; list cache invalidated; briefly **eventual consistency** on replica for `GET` until replication catches up)
+- `POST /products` — enqueue write command `{"name":"...","price":99.99}` and returns `202 Accepted` with `request_id`; request path uses bounded async queue (backpressure returns `503` when full), Kafka consumer writes to **primary** and invalidates list cache
 
 ## Run load test
 
@@ -41,3 +40,7 @@ Production-ready Go ecommerce backend with full local observability stack:
   - `docker compose --profile loadtest run --rm -e BASE_URL=http://app:8080 k6`
 - Mixed **GET + POST** (≈12% inserts):
   - `docker compose --profile loadtest run --rm k6 run /scripts/products-mixed.js`
+- **Spike** (steady → sharp RPS ramp → hold → recover; same traffic mix):
+  - `docker compose --profile loadtest run --rm k6 run /scripts/products-spike.js`
+- **Stress** (stepped RPS plateaus → sustained peak → cool down; same traffic mix):
+  - `docker compose --profile loadtest run --rm k6 run /scripts/products-stress.js`

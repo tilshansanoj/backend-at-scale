@@ -28,6 +28,8 @@ type Config struct {
 	KafkaBrokers []string
 	KafkaTopic   string
 	KafkaGroupID string
+	KafkaCommandsTopic   string
+	KafkaCommandsGroupID string
 	KafkaAsyncQueueSize int
 	KafkaAsyncWorkers   int
 
@@ -84,6 +86,8 @@ func Load() Config {
 		),
 		KafkaTopic:   getEnv("KAFKA_TOPIC", "product-events"),
 		KafkaGroupID: getEnv("KAFKA_GROUP_ID", "ecommerce-observability"),
+		KafkaCommandsTopic: getEnv("KAFKA_COMMANDS_TOPIC", "product-create-commands"),
+		KafkaCommandsGroupID: getEnv("KAFKA_COMMANDS_GROUP_ID", "ecommerce-product-writes"),
 		KafkaAsyncQueueSize: clampInt(
 			getEnvInt("KAFKA_ASYNC_QUEUE_SIZE", 16384),
 			256,

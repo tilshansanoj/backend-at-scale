@@ -20,14 +20,6 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	shutdownTrace, err := observability.InitTracing(ctx, cfg)
-	if err != nil {
-		log.Fatalf("otel tracing init failed: %v", err)
-	}
-	defer func() {
-		_ = shutdownTrace(context.Background())
-	}()
-
 	db, err := store.NewPostgres(ctx, cfg, metrics)
 	if err != nil {
 		log.Fatalf("postgres init failed: %v", err)
@@ -37,25 +29,29 @@ func main() {
 	redisClient := store.NewRedis(cfg)
 	defer redisClient.Close()
 
-	producer := kafka.NewProducer(cfg)
-	defer producer.Close()
+	eventsProducer := kafka.NewProducer(cfg, cfg.KafkaTopic)
+	defer eventsProducer.Close()
+	commandsProducer := kafka.NewProducer(cfg, cfg.KafkaCommandsTopic)
+	defer commandsProducer.Close()
 
 	pubCtx, pubStop := context.WithCancel(context.Background())
-	kafkaPub := kafka.NewAsyncPublisher(pubCtx, producer, cfg, metrics)
+	kafkaPub := kafka.NewAsyncPublisher(pubCtx, eventsProducer, cfg, metrics)
+	kafkaCmd := kafka.NewAsyncCommandProducer(pubCtx, commandsProducer, cfg, metrics)
 	defer func() {
 		pubStop()
 		kafkaPub.Wait()
+		kafkaCmd.Wait()
 	}()
 
-	consumer, err := kafka.NewConsumer(cfg)
+	consumer, err := kafka.NewConsumer(cfg, cfg.KafkaCommandsTopic, cfg.KafkaCommandsGroupID)
 	if err != nil {
 		log.Fatalf("kafka consumer init failed: %v", err)
 	}
 	defer consumer.Close()
 
-	go kafka.StartBackgroundConsumer(ctx, consumer, metrics, cfg)
+	go kafka.StartProductCreateConsumer(ctx, consumer, db, redisClient, metrics, cfg)
 
-	server := app.NewServer(cfg, db, redisClient, kafkaPub, metrics)
+	server := app.NewServer(cfg, db, redisClient, kafkaPub, kafkaCmd, metrics)
 	if err := server.Listen(":" + cfg.AppPort); err != nil {
 		log.Fatalf("server failed: %v", err)
 	}

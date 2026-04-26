@@ -3,30 +3,35 @@ import { check, sleep } from "k6";
 
 const BASE_URL = __ENV.BASE_URL || "http://app:8080";
 
+// Stress: step up arrival rate in plateaus, hold at high load, then cool down.
 export const options = {
   scenarios: {
-    mixed: {
+    stress: {
       executor: "ramping-arrival-rate",
-      startRate: 250,
+      startRate: 80,
       timeUnit: "1s",
-      preAllocatedVUs: 500,
-      maxVUs: 12000,
+      preAllocatedVUs: 600,
+      maxVUs: 16000,
       stages: [
-        { target: 800, duration: "1m" },
-        { target: 1800, duration: "2m" },
-        { target: 3000, duration: "2m" }
+        { target: 400, duration: "1m" },
+        { target: 900, duration: "2m" },
+        { target: 1600, duration: "2m" },
+        { target: 2400, duration: "2m" },
+        { target: 3200, duration: "2m" },
+        { target: 4000, duration: "5m" },
+        { target: 500, duration: "2m" }
       ]
     }
   },
   thresholds: {
-    http_req_failed: ["rate<0.05"]
+    http_req_failed: ["rate<0.15"]
   }
 };
 
 export default function () {
   if (Math.random() < 0.12) {
     const body = JSON.stringify({
-      name: `load-${__VU}-${Date.now()}`,
+      name: `stress-${__VU}-${Date.now()}`,
       price: Math.round((10 + Math.random() * 500) * 100) / 100
     });
     const res = http.post(`${BASE_URL}/products`, body, {

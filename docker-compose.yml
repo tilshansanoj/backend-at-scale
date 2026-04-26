@@ -20,11 +20,10 @@ services:
       KAFKA_BROKERS: "kafka:9092"
       KAFKA_TOPIC: "${KAFKA_TOPIC:-product-events}"
       KAFKA_GROUP_ID: "${KAFKA_GROUP_ID:-ecommerce-observability}"
+      KAFKA_COMMANDS_TOPIC: "${KAFKA_COMMANDS_TOPIC:-product-create-commands}"
+      KAFKA_COMMANDS_GROUP_ID: "${KAFKA_COMMANDS_GROUP_ID:-ecommerce-product-writes}"
       KAFKA_ASYNC_QUEUE_SIZE: "${KAFKA_ASYNC_QUEUE_SIZE:-16384}"
       KAFKA_ASYNC_WORKERS: "${KAFKA_ASYNC_WORKERS:-2}"
-      OTEL_EXPORTER_OTLP_ENDPOINT: "${OTEL_EXPORTER_OTLP_ENDPOINT:-tempo:4317}"
-      OTEL_EXPORTER_OTLP_INSECURE: "${OTEL_EXPORTER_OTLP_INSECURE:-true}"
-      OTEL_TRACE_SAMPLE_RATIO: "${OTEL_TRACE_SAMPLE_RATIO:-1}"
       FIBER_PREFORK: "${FIBER_PREFORK:-false}"
       POSTGRES_POOL_MAX_CONNS: "${POSTGRES_POOL_MAX_CONNS:-25}"
       POSTGRES_READ_POOL_MAX_CONNS: "${POSTGRES_READ_POOL_MAX_CONNS:-60}"
@@ -38,8 +37,6 @@ services:
       redis:
         condition: service_healthy
       kafka:
-        condition: service_started
-      tempo:
         condition: service_started
     restart: unless-stopped
 
@@ -244,20 +241,6 @@ services:
       - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
     depends_on:
       - prometheus
-      - tempo
-    restart: unless-stopped
-
-  tempo:
-    image: grafana/tempo:2.6.1
-    container_name: ecommerce-tempo
-    user: "0:0"
-    command: ["-config.file=/etc/tempo/tempo.yml"]
-    ports:
-      - "3200:3200"
-      - "4317:4317"
-    volumes:
-      - ./tempo/tempo.yml:/etc/tempo/tempo.yml:ro
-      - tempo_data:/tmp/tempo
     restart: unless-stopped
 
   k6:
@@ -277,4 +260,3 @@ volumes:
   postgres_replica2_data:
   prometheus_data:
   grafana_data:
-  tempo_data:
