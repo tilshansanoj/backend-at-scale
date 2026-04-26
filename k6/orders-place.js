@@ -22,30 +22,35 @@ const systemTagsNoURL = [
 export const options = {
   systemTags: systemTagsNoURL,
   scenarios: {
-    products_rps_test: {
+    orders_place: {
       executor: "ramping-arrival-rate",
-      startRate: 300,
+      startRate: 100,
       timeUnit: "1s",
-      preAllocatedVUs: 600,
-      maxVUs: 16000,
+      preAllocatedVUs: 200,
+      maxVUs: 8000,
       stages: [
+        { target: 400, duration: "45s" },
         { target: 1200, duration: "1m" },
-        { target: 2500, duration: "2m" },
-        { target: 4000, duration: "3m" },
-        { target: 4000, duration: "2m" }
+        { target: 2000, duration: "1m" }
       ]
     }
   },
   thresholds: {
-    http_req_duration: ["p(95)<200"],
-    http_req_failed: ["rate<0.01"]
+    http_req_failed: ["rate<0.05"],
+    http_req_duration: ["p(99)<5000"]
   }
 };
 
 export default function () {
-  const res = http.get(`${BASE_URL}/products`, { tags: { name: "GET /products" } });
-  check(res, {
-    "status is 200": (r) => r.status === 200
+  const body = JSON.stringify({
+    product_id: 1,
+    quantity: 1 + Math.floor(Math.random() * 3)
   });
+  const res = http.post(`${BASE_URL}/orders`, body, {
+    headers: { "Content-Type": "application/json" },
+    tags: { name: "POST /orders" },
+    responseCallback: http.expectedStatuses(202)
+  });
+  check(res, { "POST /orders 202": (r) => r.status === 202 });
   sleep(0.02);
 }

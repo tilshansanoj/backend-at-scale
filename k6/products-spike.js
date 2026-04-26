@@ -4,7 +4,24 @@ import { check, sleep } from "k6";
 const BASE_URL = __ENV.BASE_URL || "http://app:8080";
 
 // Spike: steady traffic, sudden sharp ramp, hold, then recover.
+const systemTagsNoURL = [
+  "check",
+  "error",
+  "error_code",
+  "expected_response",
+  "group",
+  "method",
+  "name",
+  "proto",
+  "scenario",
+  "service",
+  "status",
+  "subproto",
+  "tls_version"
+];
+
 export const options = {
+  systemTags: systemTagsNoURL,
   scenarios: {
     spike: {
       executor: "ramping-arrival-rate",
@@ -32,11 +49,12 @@ export default function () {
       price: Math.round((10 + Math.random() * 500) * 100) / 100
     });
     const res = http.post(`${BASE_URL}/products`, body, {
-      headers: { "Content-Type": "application/json" }
+      headers: { "Content-Type": "application/json" },
+      tags: { name: "POST /products" }
     });
     check(res, { "POST /products 202": (r) => r.status === 202 });
   } else {
-    const res = http.get(`${BASE_URL}/products`);
+    const res = http.get(`${BASE_URL}/products`, { tags: { name: "GET /products" } });
     check(res, { "GET /products 200": (r) => r.status === 200 });
   }
   sleep(0.02);

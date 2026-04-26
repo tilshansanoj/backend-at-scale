@@ -46,7 +46,7 @@
       "title": "RPS",
       "targets": [
         {
-          "expr": "sum(rate(ecommerce_http_requests_total{route=\"/products\"}[1m]))",
+          "expr": "sum(rate(ecommerce_http_requests_total{route=~\"/products|/orders.*\"}[1m]))",
           "legendFormat": "products rps",
           "refId": "A"
         }
@@ -69,17 +69,17 @@
       "title": "Latency P50/P95/P99",
       "targets": [
         {
-          "expr": "histogram_quantile(0.50, sum(rate(ecommerce_http_request_duration_seconds_bucket{route=\"/products\"}[5m])) by (le))",
+          "expr": "histogram_quantile(0.50, sum(rate(ecommerce_http_request_duration_seconds_bucket{route=~\"/products|/orders.*\"}[5m])) by (le))",
           "legendFormat": "p50",
           "refId": "A"
         },
         {
-          "expr": "histogram_quantile(0.95, sum(rate(ecommerce_http_request_duration_seconds_bucket{route=\"/products\"}[5m])) by (le))",
+          "expr": "histogram_quantile(0.95, sum(rate(ecommerce_http_request_duration_seconds_bucket{route=~\"/products|/orders.*\"}[5m])) by (le))",
           "legendFormat": "p95",
           "refId": "B"
         },
         {
-          "expr": "histogram_quantile(0.99, sum(rate(ecommerce_http_request_duration_seconds_bucket{route=\"/products\"}[5m])) by (le))",
+          "expr": "histogram_quantile(0.99, sum(rate(ecommerce_http_request_duration_seconds_bucket{route=~\"/products|/orders.*\"}[5m])) by (le))",
           "legendFormat": "p99",
           "refId": "C"
         }
@@ -104,7 +104,7 @@
       "title": "Error Rate",
       "targets": [
         {
-          "expr": "sum(rate(ecommerce_http_requests_total{route=\"/products\",status=~\"5..|4..\"}[5m])) / clamp_min(sum(rate(ecommerce_http_requests_total{route=\"/products\"}[5m])), 1)",
+          "expr": "sum(rate(ecommerce_http_requests_total{route=~\"/products|/orders.*\",status=~\"5..|4..\"}[5m])) / clamp_min(sum(rate(ecommerce_http_requests_total{route=~\"/products|/orders.*\"}[5m])), 1)",
           "legendFormat": "error rate",
           "refId": "A"
         }
@@ -230,8 +230,8 @@
       "title": "Kafka Consumer Lag",
       "targets": [
         {
-          "expr": "sum by (partition) (ecommerce_kafka_consumer_lag_messages)",
-          "legendFormat": "partition {{partition}}",
+          "expr": "ecommerce_kafka_consumer_lag_messages",
+          "legendFormat": "{{topic}} p{{partition}}",
           "refId": "A"
         }
       ],
@@ -248,6 +248,6 @@
   "timezone": "browser",
   "title": "Ecommerce Observability",
   "uid": "ecommerce-observability",
-  "version": 2,
+  "version": 4,
   "weekStart": ""
 }

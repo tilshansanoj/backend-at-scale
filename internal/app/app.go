@@ -22,6 +22,7 @@ func NewServer(
 	redisClient *redis.Client,
 	kafkaPub *kafka.AsyncPublisher,
 	kafkaCmd *kafka.AsyncCommandProducer,
+	orderQueue *kafka.JSONQueueProducer,
 	metrics *observability.Metrics,
 ) *fiber.App {
 	app := fiber.New(fiber.Config{
@@ -31,12 +32,15 @@ func NewServer(
 	app.Use(middleware.PrometheusHTTP(cfg, metrics))
 
 	productHandler := handlers.NewProductHandler(cfg, postgres, redisClient, kafkaPub, kafkaCmd, metrics)
+	orderHandler := handlers.NewOrderHandler(cfg, postgres, orderQueue, kafkaPub, metrics)
 
 	app.Get("/health", func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{"status": "ok"})
 	})
 	app.Get("/products", productHandler.GetProducts)
 	app.Post("/products", productHandler.CreateProduct)
+	app.Post("/orders", orderHandler.CreateOrder)
+	app.Get("/orders/:request_id", orderHandler.GetOrder)
 	app.Get("/metrics", adaptor.HTTPHandler(promhttp.HandlerFor(
 		prometheus.DefaultGatherer,
 		promhttp.HandlerOpts{

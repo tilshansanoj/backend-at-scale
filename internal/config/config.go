@@ -27,12 +27,17 @@ type Config struct {
 	RedisMinIdleConns  int
 	RedisCommandQueueKey    string
 	RedisCommandQueueMaxLen int
+	RedisOrderQueueKey      string
 
 	KafkaBrokers []string
 	KafkaTopic   string
 	KafkaGroupID string
 	KafkaCommandsTopic   string
 	KafkaCommandsGroupID string
+	KafkaOrderCommandsTopic    string
+	KafkaOrderCommandsGroupID  string
+	KafkaOrderLifecycleTopic   string
+	KafkaOrderLifecycleGroupID string
 	KafkaAsyncQueueSize int
 	KafkaAsyncWorkers   int
 	KafkaProducerBatchTimeoutMS int
@@ -94,6 +99,7 @@ func Load() Config {
 			1000,
 			2_000_000,
 		),
+		RedisOrderQueueKey: getEnv("REDIS_ORDER_QUEUE_KEY", "orders:place:queue:v1"),
 		KafkaBrokers: splitAndTrim(
 			getEnv("KAFKA_BROKERS", "kafka:9092"),
 		),
@@ -101,6 +107,10 @@ func Load() Config {
 		KafkaGroupID: getEnv("KAFKA_GROUP_ID", "ecommerce-observability"),
 		KafkaCommandsTopic: getEnv("KAFKA_COMMANDS_TOPIC", "product-create-commands"),
 		KafkaCommandsGroupID: getEnv("KAFKA_COMMANDS_GROUP_ID", "ecommerce-product-writes"),
+		KafkaOrderCommandsTopic:   getEnv("KAFKA_ORDER_COMMANDS_TOPIC", "order-place-commands"),
+		KafkaOrderCommandsGroupID: getEnv("KAFKA_ORDER_COMMANDS_GROUP_ID", "ecommerce-order-place"),
+		KafkaOrderLifecycleTopic:   getEnv("KAFKA_ORDER_LIFECYCLE_TOPIC", "order-lifecycle"),
+		KafkaOrderLifecycleGroupID: getEnv("KAFKA_ORDER_LIFECYCLE_GROUP_ID", "ecommerce-order-lifecycle"),
 		KafkaAsyncQueueSize: clampInt(
 			getEnvInt("KAFKA_ASYNC_QUEUE_SIZE", 16384),
 			256,

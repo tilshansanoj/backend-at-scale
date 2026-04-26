@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -10,6 +11,7 @@ import (
 
 	"backend-at-scale/internal/config"
 	"backend-at-scale/internal/observability"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -24,6 +26,24 @@ type Product struct {
 	ID    int64   `json:"id"`
 	Name  string  `json:"name"`
 	Price float64 `json:"price"`
+}
+
+// Order lifecycle values match PostgreSQL enum order_status.
+const (
+	OrderStatusWaiting          = "waiting"
+	OrderStatusOrderReceived    = "order_received"
+	OrderStatusSentForShipping  = "sent_for_shipping"
+	OrderStatusCompleted        = "completed"
+)
+
+type Order struct {
+	ID        int64     `json:"id"`
+	RequestID string    `json:"request_id"`
+	ProductID int64     `json:"product_id"`
+	Quantity  int       `json:"quantity"`
+	Status    string    `json:"status"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 type PostgresStore struct {
@@ -238,6 +258,121 @@ func (s *PostgresStore) InsertProduct(ctx context.Context, name string, price fl
 		return Product{}, err
 	}
 	return p, nil
+}
+
+// InsertOrderWaitingIfAbsent inserts a new order at status waiting, or returns the existing row for request_id.
+// inserted is true when a new row was created.
+func (s *PostgresStore) InsertOrderWaitingIfAbsent(ctx context.Context, requestID string, productID int64, quantity int) (o Order, inserted bool, err error) {
+	const queryName = "insert_order_waiting"
+	start := time.Now()
+	ctx, span := otel.Tracer("ecommerce.store").Start(ctx, "postgres.insert_order_waiting")
+	span.SetAttributes(
+		attribute.String("db.operation", "insert"),
+		attribute.String("db.pool", "primary"),
+	)
+	defer span.End()
+
+	err = s.write.QueryRow(
+		ctx,
+		`INSERT INTO orders (request_id, product_id, quantity, status)
+		 VALUES ($1, $2, $3, 'waiting')
+		 ON CONFLICT (request_id) DO NOTHING
+		 RETURNING id, request_id, product_id, quantity, status::text, created_at, updated_at`,
+		requestID, productID, quantity,
+	).Scan(&o.ID, &o.RequestID, &o.ProductID, &o.Quantity, &o.Status, &o.CreatedAt, &o.UpdatedAt)
+	s.metrics.DBQueryDur.WithLabelValues(s.config.ServiceName, queryName).Observe(time.Since(start).Seconds())
+	if err == nil {
+		return o, true, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "insert failed")
+		return Order{}, false, err
+	}
+
+	start2 := time.Now()
+	err = s.write.QueryRow(
+		ctx,
+		`SELECT id, request_id, product_id, quantity, status::text, created_at, updated_at
+		 FROM orders WHERE request_id = $1`,
+		requestID,
+	).Scan(&o.ID, &o.RequestID, &o.ProductID, &o.Quantity, &o.Status, &o.CreatedAt, &o.UpdatedAt)
+	s.metrics.DBQueryDur.WithLabelValues(s.config.ServiceName, "select_order_by_request_id").Observe(time.Since(start2).Seconds())
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "select after conflict failed")
+		return Order{}, false, err
+	}
+	return o, false, nil
+}
+
+func (s *PostgresStore) GetOrderByRequestID(ctx context.Context, requestID string) (Order, error) {
+	const queryName = "select_order_by_request_id_read"
+	start := time.Now()
+	ctx, span := otel.Tracer("ecommerce.store").Start(ctx, "postgres.get_order_by_request_id")
+	pool, poolLabel := s.pickRead()
+	span.SetAttributes(
+		attribute.String("db.operation", "select"),
+		attribute.String("db.pool", poolLabel),
+	)
+	defer span.End()
+
+	var o Order
+	err := pool.QueryRow(
+		ctx,
+		`SELECT id, request_id, product_id, quantity, status::text, created_at, updated_at
+		 FROM orders WHERE request_id = $1`,
+		requestID,
+	).Scan(&o.ID, &o.RequestID, &o.ProductID, &o.Quantity, &o.Status, &o.CreatedAt, &o.UpdatedAt)
+	s.metrics.DBQueryDur.WithLabelValues(s.config.ServiceName, queryName).Observe(time.Since(start).Seconds())
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Order{}, pgx.ErrNoRows
+		}
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "query failed")
+		return Order{}, err
+	}
+	return o, nil
+}
+
+// AdvanceOrderStatus sets status to toStatus only when the row is still fromStatus. Returns ok when one row was updated.
+func (s *PostgresStore) AdvanceOrderStatus(ctx context.Context, orderID int64, fromStatus, toStatus string) (ok bool, err error) {
+	const queryName = "update_order_status"
+	start := time.Now()
+	ctx, span := otel.Tracer("ecommerce.store").Start(ctx, "postgres.advance_order_status")
+	span.SetAttributes(
+		attribute.String("db.operation", "update"),
+		attribute.String("db.pool", "primary"),
+	)
+	defer span.End()
+
+	tag, err := s.write.Exec(
+		ctx,
+		`UPDATE orders SET status = $1::order_status
+		 WHERE id = $2 AND status = $3::order_status`,
+		toStatus, orderID, fromStatus,
+	)
+	s.metrics.DBQueryDur.WithLabelValues(s.config.ServiceName, queryName).Observe(time.Since(start).Seconds())
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "update failed")
+		return false, err
+	}
+	return tag.RowsAffected() > 0, nil
+}
+
+// GetOrderStatusByID returns the current status string for an order (primary; used by lifecycle consumer).
+func (s *PostgresStore) GetOrderStatusByID(ctx context.Context, orderID int64) (string, error) {
+	const queryName = "select_order_status_by_id"
+	start := time.Now()
+	var st string
+	err := s.write.QueryRow(ctx, `SELECT status::text FROM orders WHERE id = $1`, orderID).Scan(&st)
+	s.metrics.DBQueryDur.WithLabelValues(s.config.ServiceName, queryName).Observe(time.Since(start).Seconds())
+	if err != nil {
+		return "", err
+	}
+	return st, nil
 }
 
 func (s *PostgresStore) Close() {
